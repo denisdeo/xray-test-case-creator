@@ -205,6 +205,11 @@ async function createIssue(tc) {
   return result.key;
 }
 
+// ─── Xray base path (configurable per Xray version) ──────────────────────────
+// Xray Server / DC older : /rest/raven/1.0
+// Xray DC newer          : /rest/xray/1.0
+const XRAY_BASE = (cfg.xrayBasePath || '/rest/raven/1.0').replace(/\/$/, '');
+
 // ─── Add Xray steps ───────────────────────────────────────────────────────────
 async function addSteps(issueKey, steps) {
   if (!steps || !steps.length) return;
@@ -218,19 +223,19 @@ async function addSteps(issueKey, steps) {
       },
     })),
   };
-  await apiRequest('POST', `/rest/raven/1.0/api/test/${issueKey}/steps`, body);
+  await apiRequest('POST', `${XRAY_BASE}/api/test/${issueKey}/steps`, body);
 }
 
 // ─── Link to Test Set ─────────────────────────────────────────────────────────
 async function linkToTestSet(issueKey, testSetKey) {
   if (!testSetKey) return;
-  await apiRequest('POST', `/rest/raven/1.0/api/testset/${testSetKey}/test`, { add: [issueKey] });
+  await apiRequest('POST', `${XRAY_BASE}/api/testset/${testSetKey}/test`, { add: [issueKey] });
 }
 
 // ─── Link to Test Plan ────────────────────────────────────────────────────────
 async function linkToTestPlan(issueKey, testPlanKey) {
   if (!testPlanKey) return;
-  await apiRequest('POST', `/rest/raven/1.0/api/testplan/${testPlanKey}/test`, { add: [issueKey] });
+  await apiRequest('POST', `${XRAY_BASE}/api/testplan/${testPlanKey}/test`, { add: [issueKey] });
 }
 
 // ─── Print summary table ──────────────────────────────────────────────────────
