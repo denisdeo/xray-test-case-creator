@@ -3,3 +3,5 @@ results.json
 test-cases.json
 node_modules/
 .env
+.claude/
+.~lock.*
