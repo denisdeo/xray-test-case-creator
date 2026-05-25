@@ -2,14 +2,13 @@
 /**
  * Xray Test Case Creator — Xray-Tool
  * Creates Jira issues (type: Test) with Xray steps from a CSV file.
- * Works with Xray Server / Data Centre.
+ * Works with Xray for Jira CLOUD (GraphQL API).
  *
  * Usage:
  *   node create-test-cases.js test-cases.csv
  *   node create-test-cases.js test-cases.csv --dry-run
  *   node create-test-cases.js test-cases.csv --ticket P18-6128
  *   node create-test-cases.js test-cases.csv --priority Critical
- *   node create-test-cases.js test-cases.csv --ticket P18-6128 --priority Critical
  *
  * CSV columns (header row required):
  *   summary, ticket, priority, label, testSet, testPlan,
@@ -21,7 +20,6 @@
 const fs    = require('fs');
 const path  = require('path');
 const https = require('https');
-const http  = require('http');
 
 // ─── Load config ──────────────────────────────────────────────────────────────
 const cfgPath = path.join(__dirname, 'config.json');
@@ -30,6 +28,12 @@ if (!fs.existsSync(cfgPath)) {
   process.exit(1);
 }
 const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+
+if (!cfg.xrayClientId || !cfg.xrayClientSecret) {
+  console.error('\n❌  config.json is missing xrayClientId and xrayClientSecret.');
+  console.error('    Get them from: Jira → Apps → Xray → Settings → API Keys → Generate\n');
+  process.exit(1);
+}
 
 // ─── Parse CLI args ───────────────────────────────────────────────────────────
 const args        = process.argv.slice(2);
@@ -86,7 +90,7 @@ function csvToTestCases(text) {
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (row.every(f => !f.trim())) continue; // skip blank rows
+    if (row.every(f => !f.trim())) continue;
 
     const summary = get(row, 'summary');
     if (summary) {
@@ -104,7 +108,7 @@ function csvToTestCases(text) {
 
     if (action || data || result) {
       if (!current) {
-        console.error(`\n❌  Row ${i + 1}: step data found but no test case started (missing summary in a preceding row).\n`);
+        console.error(`\n❌  Row ${i + 1}: step data found but no test case started (missing summary).\n`);
         process.exit(1);
       }
       current.steps.push({ action, data, result });
@@ -123,70 +127,102 @@ if (!fs.existsSync(tcPath)) {
 
 let testCases = csvToTestCases(fs.readFileSync(tcPath, 'utf8'));
 
-// Apply filters
 if (ticketArg)   testCases = testCases.filter(t => t.ticket === ticketArg);
 if (priorityArg) testCases = testCases.filter(t => (t.priority || '').toLowerCase() === priorityArg.toLowerCase());
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-const base64 = str => Buffer.from(str).toString('base64');
-const auth   = () => 'Basic ' + base64(`${cfg.email}:${cfg.apiToken}`);
-
-const PRIORITY_MAP = {
-  critical: 'Highest',
-  high:     'High',
-  medium:   'Medium',
-  low:      'Low',
-};
-
-function apiRequest(method, urlPath, body) {
+// ─── HTTP helper ──────────────────────────────────────────────────────────────
+function httpRequest(hostname, path, method, headers, body) {
   return new Promise((resolve, reject) => {
-    const url    = new URL(cfg.jiraUrl);
-    const isHttps = url.protocol === 'https:';
-    const lib    = isHttps ? https : http;
-    const data   = body ? JSON.stringify(body) : null;
-    const opts   = {
-      hostname: url.hostname,
-      port:     url.port || (isHttps ? 443 : 80),
-      path:     urlPath,
-      method,
-      headers: {
-        'Authorization': auth(),
-        'Content-Type':  'application/json',
-        'Accept':        'application/json',
-        ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
-      },
-    };
-    const req = lib.request(opts, res => {
+    const opts = { hostname, path, method, headers, port: 443 };
+    const req  = https.request(opts, res => {
       let raw = '';
       res.on('data', c => raw += c);
       res.on('end', () => {
-        try {
-          const parsed = raw ? JSON.parse(raw) : {};
-          if (res.statusCode >= 400) {
-            const msg = parsed.errorMessages?.join(', ') || parsed.errors
-              ? Object.values(parsed.errors || {}).join(', ')
-              : raw.substring(0, 200);
-            reject(new Error(`HTTP ${res.statusCode}: ${msg}`));
-          } else {
-            resolve(parsed);
-          }
-        } catch {
+        if (res.statusCode >= 400) {
+          let msg = `HTTP ${res.statusCode}`;
+          try {
+            const p = JSON.parse(raw);
+            msg += ': ' + (
+              (p.errorMessages && p.errorMessages.join(', ')) ||
+              Object.values(p.errors || {}).join(', ') ||
+              p.detail || raw.substring(0, 300)
+            );
+          } catch { msg += ': ' + raw.substring(0, 300); }
+          reject(new Error(msg));
+        } else {
           resolve(raw);
         }
       });
     });
     req.on('error', reject);
-    if (data) req.write(data);
+    if (body) req.write(body);
     req.end();
   });
 }
 
-// ─── Create Jira issue (type: Test) ──────────────────────────────────────────
-async function createIssue(tc) {
-  const priority = PRIORITY_MAP[(tc.priority || 'medium').toLowerCase()] || 'Medium';
-  const labels   = [...new Set([tc.label, tc.ticket].filter(Boolean))];
+// ─── Jira Cloud REST API ──────────────────────────────────────────────────────
+const jiraHost = new URL(cfg.jiraUrl.replace(/\/$/, '')).hostname;
+const jiraAuth = 'Basic ' + Buffer.from(`${cfg.email}:${cfg.apiToken}`).toString('base64');
 
-  const descParts = [];
+async function jiraRequest(method, urlPath, body) {
+  const data = body ? JSON.stringify(body) : null;
+  const headers = {
+    'Authorization': jiraAuth,
+    'Content-Type':  'application/json',
+    'Accept':        'application/json',
+    ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
+  };
+  const raw = await httpRequest(jiraHost, urlPath, method, headers, data);
+  return raw ? JSON.parse(raw) : {};
+}
+
+// ─── Xray Cloud authentication ────────────────────────────────────────────────
+const XRAY_HOST = 'xray.cloud.getxray.app';
+let _xrayToken  = null;
+
+async function getXrayToken() {
+  if (_xrayToken) return _xrayToken;
+  const body = JSON.stringify({ client_id: cfg.xrayClientId, client_secret: cfg.xrayClientSecret });
+  const raw  = await httpRequest(XRAY_HOST, '/api/v2/authenticate', 'POST', {
+    'Content-Type':   'application/json',
+    'Content-Length': Buffer.byteLength(body),
+  }, body);
+  // Response is a JWT string wrapped in quotes: "eyJ..."
+  _xrayToken = raw.replace(/^"|"$/g, '');
+  return _xrayToken;
+}
+
+// ─── Xray Cloud GraphQL ───────────────────────────────────────────────────────
+async function xrayGraphQL(query, variables) {
+  const token = await getXrayToken();
+  const body  = JSON.stringify({ query, variables });
+  const raw   = await httpRequest(XRAY_HOST, '/api/v2/graphql', 'POST', {
+    'Authorization':  `Bearer ${token}`,
+    'Content-Type':   'application/json',
+    'Content-Length': Buffer.byteLength(body),
+  }, body);
+  const parsed = JSON.parse(raw);
+  if (parsed.errors) throw new Error(parsed.errors.map(e => e.message).join('; '));
+  return parsed.data;
+}
+
+// ─── Resolve issue key → numeric Jira ID (cached) ────────────────────────────
+const _idCache = {};
+async function resolveIssueId(key) {
+  if (_idCache[key]) return _idCache[key];
+  const result    = await jiraRequest('GET', `/rest/api/2/issue/${key}?fields=id`);
+  _idCache[key]   = result.id;
+  return result.id;
+}
+
+// ─── Priority map ─────────────────────────────────────────────────────────────
+const PRIORITY_MAP = { critical: 'Highest', high: 'High', medium: 'Medium', low: 'Low' };
+
+// ─── Create Jira issue ────────────────────────────────────────────────────────
+async function createIssue(tc) {
+  const priority   = PRIORITY_MAP[(tc.priority || 'medium').toLowerCase()] || 'Medium';
+  const labels     = [...new Set([tc.label, tc.ticket].filter(Boolean))];
+  const descParts  = [];
   if (tc.preconditions) descParts.push(`*Preconditions:*\n${tc.preconditions}`);
   if (tc.description)   descParts.push(tc.description);
 
@@ -201,41 +237,53 @@ async function createIssue(tc) {
     },
   };
 
-  const result = await apiRequest('POST', '/rest/api/2/issue', body);
-  return result.key;
+  const result = await jiraRequest('POST', '/rest/api/2/issue', body);
+  return { key: result.key, id: result.id };   // id = numeric Jira issue ID
 }
 
-// ─── Xray base path (configurable per Xray version) ──────────────────────────
-// Xray Server / DC older : /rest/raven/1.0
-// Xray DC newer          : /rest/xray/1.0
-const XRAY_BASE = (cfg.xrayBasePath || '/rest/raven/1.0').replace(/\/$/, '');
-
-// ─── Add Xray steps ───────────────────────────────────────────────────────────
-async function addSteps(issueKey, steps) {
+// ─── Add Xray steps (Cloud GraphQL) ──────────────────────────────────────────
+async function addSteps(issueId, steps) {
   if (!steps || !steps.length) return;
-  const body = {
-    steps: steps.map((s, i) => ({
-      index: i + 1,
-      fields: {
-        Action: s.action || '',
-        Data:   s.data   || '',
-        Result: s.result || '',
+  for (const step of steps) {
+    await xrayGraphQL(`
+      mutation AddStep($issueId: String!, $step: CreateStepInput!) {
+        addTestStep(issueId: $issueId, step: $step) { id }
+      }
+    `, {
+      issueId,
+      step: {
+        action: step.action || '',
+        data:   step.data   || '',
+        result: step.result || '',
       },
-    })),
-  };
-  await apiRequest('POST', `${XRAY_BASE}/api/test/${issueKey}/steps`, body);
+    });
+  }
 }
 
-// ─── Link to Test Set ─────────────────────────────────────────────────────────
-async function linkToTestSet(issueKey, testSetKey) {
+// ─── Link to Test Set (Cloud GraphQL) ────────────────────────────────────────
+async function linkToTestSet(testIssueId, testSetKey) {
   if (!testSetKey) return;
-  await apiRequest('POST', `${XRAY_BASE}/api/testset/${testSetKey}/test`, { add: [issueKey] });
+  const testSetId = await resolveIssueId(testSetKey);
+  await xrayGraphQL(`
+    mutation AddToSet($issueId: String!, $testIssueIds: [String]!) {
+      addTestsToTestSet(issueId: $issueId, testIssueIds: $testIssueIds) {
+        addedTests warning
+      }
+    }
+  `, { issueId: testSetId, testIssueIds: [testIssueId] });
 }
 
-// ─── Link to Test Plan ────────────────────────────────────────────────────────
-async function linkToTestPlan(issueKey, testPlanKey) {
+// ─── Link to Test Plan (Cloud GraphQL) ───────────────────────────────────────
+async function linkToTestPlan(testIssueId, testPlanKey) {
   if (!testPlanKey) return;
-  await apiRequest('POST', `${XRAY_BASE}/api/testplan/${testPlanKey}/test`, { add: [issueKey] });
+  const testPlanId = await resolveIssueId(testPlanKey);
+  await xrayGraphQL(`
+    mutation AddToPlan($issueId: String!, $testIssueIds: [String]!) {
+      addTestsToTestPlan(issueId: $issueId, testIssueIds: $testIssueIds) {
+        addedTests warning
+      }
+    }
+  `, { issueId: testPlanId, testIssueIds: [testIssueId] });
 }
 
 // ─── Print summary table ──────────────────────────────────────────────────────
@@ -296,6 +344,11 @@ async function main() {
     if (answer !== 'y') { console.log('Cancelled.\n'); return; }
   }
 
+  // Authenticate with Xray Cloud up front so any credential errors surface immediately
+  process.stdout.write('  Authenticating with Xray Cloud... ');
+  await getXrayToken();
+  console.log('✅');
+
   const results = { ok: [], failed: [] };
   const total   = testCases.length;
 
@@ -305,16 +358,16 @@ async function main() {
     process.stdout.write(`  ${num} Creating: "${tc.summary.substring(0, 70)}"... `);
 
     try {
-      const key = await createIssue(tc);
+      const { key, id } = await createIssue(tc);
       process.stdout.write(`→ ${key} `);
 
       if (tc.steps && tc.steps.length) {
-        await addSteps(key, tc.steps);
+        await addSteps(id, tc.steps);
         process.stdout.write(`(${tc.steps.length} steps) `);
       }
 
-      if (tc.testSet)  await linkToTestSet(key, tc.testSet);
-      if (tc.testPlan) await linkToTestPlan(key, tc.testPlan);
+      if (tc.testSet)  await linkToTestSet(id, tc.testSet);
+      if (tc.testPlan) await linkToTestPlan(id, tc.testPlan);
 
       const links = [tc.testSet, tc.testPlan].filter(Boolean);
       if (links.length) process.stdout.write(`→ linked to ${links.join(', ')} `);

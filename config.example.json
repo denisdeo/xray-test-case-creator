@@ -1,12 +1,13 @@
 {
   "_instructions": "Copy this file to config.json and fill in your details. Never commit config.json to git.",
-  "jiraUrl":       "https://yourcompany.atlassian.net",
-  "projectKey":    "P18",
-  "email":         "your.email@company.com",
-  "apiToken":      "your-jira-api-token-here",
-  "issueTypeName": "Test",
-  "xrayBasePath":  "/rest/raven/1.0",
-  "_xrayNote":     "Xray Server/DC older → /rest/raven/1.0  |  Xray DC newer → /rest/xray/1.0",
-  "_issueTypeNote": "Must match exactly — usually 'Test' for Xray. Check your Jira project settings if creation fails.",
-  "_tokenNote":    "Get your API token from: https://id.atlassian.com/manage-profile/security/api-tokens"
+  "jiraUrl":          "https://yourcompany.atlassian.net",
+  "projectKey":       "P18",
+  "email":            "your.email@company.com",
+  "apiToken":         "your-jira-api-token-here",
+  "issueTypeName":    "Test",
+  "xrayClientId":     "your-xray-client-id-here",
+  "xrayClientSecret": "your-xray-client-secret-here",
+  "_xrayNote":        "Get Client ID + Secret from: Jira → Apps → Xray → Settings → API Keys → Generate",
+  "_issueTypeNote":   "Must match exactly — check your Jira project settings (usually 'Test' for Xray)",
+  "_tokenNote":       "Get your Jira API token from: https://id.atlassian.com/manage-profile/security/api-tokens"
 }
