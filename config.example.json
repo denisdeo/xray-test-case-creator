@@ -1,7 +1,7 @@
 {
   "_instructions": "Copy this file to config.json and fill in your details. Never commit config.json to git.",
   "jiraUrl":          "https://yourcompany.atlassian.net",
-  "projectKey":       "P18",
+  "projectKey":       "XRR",
   "email":            "your.email@company.com",
   "apiToken":         "your-jira-api-token-here",
   "issueTypeName":    "Test",
