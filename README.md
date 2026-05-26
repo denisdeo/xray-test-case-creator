@@ -1,7 +1,13 @@
 # Xray Test Case Creator — Xray-Tool
 
-Creates Jira Test issues with Xray steps from a CSV file.
+Creates Test Cases inside an Xray Test Set from a CSV file.
 Works with **Xray for Jira Cloud**.
+
+---
+
+## How it works
+
+The script creates **Manual Test Cases** directly inside your Xray Test Set (e.g. XRR-1825) using the Xray Cloud GraphQL API. Each test case is created in the **X-Ray Repository (XRR)** project with its steps, then automatically linked to the Test Set and Test Plan you specify in the CSV.
 
 ---
 
@@ -11,7 +17,7 @@ Works with **Xray for Jira Cloud**.
 Download from https://nodejs.org — any version 14+ works.
 Verify: `node --version`
 
-### 2. Configure your Jira connection
+### 2. Configure your connection
 ```bash
 cp config.example.json config.json
 ```
@@ -19,7 +25,7 @@ Open `config.json` and fill in all fields:
 ```json
 {
   "jiraUrl":          "https://yourcompany.atlassian.net",
-  "projectKey":       "P18",
+  "projectKey":       "XRR",
   "email":            "your.email@company.com",
   "apiToken":         "your-jira-api-token-here",
   "issueTypeName":    "Test Case",
@@ -27,6 +33,8 @@ Open `config.json` and fill in all fields:
   "xrayClientSecret": "your-xray-client-secret-here"
 }
 ```
+
+> **`projectKey` must be `XRR`** — the X-Ray Repository project where Xray stores all test cases, test sets and test plans. This is NOT your development project key (e.g. P18).
 
 **Important:** `config.json` is gitignored — never commit credentials.
 
@@ -39,7 +47,7 @@ Open `config.json` and fill in all fields:
 ---
 
 ### 4. Get your Xray Client ID and Client Secret
-The script uses the **Xray Cloud GraphQL API** to create test steps, which requires its own credentials separate from your Jira API token.
+The script uses the **Xray Cloud GraphQL API** to create test cases and steps, which requires its own credentials separate from your Jira API token.
 
 1. Go to your Jira → **Apps** (top navigation)
 2. In the left sidebar find **Xray** → **Settings** → **API Keys**
@@ -89,7 +97,7 @@ summary, ticket, priority, label, testSet, testPlan, preconditions, description,
 
 | summary | ticket | priority | label | testSet | testPlan | preconditions | description | step_action | step_data | step_result |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Verify login | P18-100 | Critical | auth | XRR-10 | P18-101 | User is logged out | | Navigate to /login | | Login page shown |
+| Verify login | P18-100 | Critical | auth | XRR-1825 | P18-101 | User is logged out | | Navigate to /login | | Login page shown |
 | | | | | | | | | Enter credentials | user / pass | User is authenticated |
 | | | | | | | | | Verify redirect | | User lands on dashboard |
 
@@ -97,19 +105,19 @@ summary, ticket, priority, label, testSet, testPlan, preconditions, description,
 
 | Column | Required | Notes |
 |---|---|---|
-| summary | Yes (first row only) | Jira issue summary — signals start of a new test case |
+| summary | Yes (first row only) | Test case title — signals start of a new test case |
 | step_action | Yes (each step row) | What the tester does |
-| testSet | **Strongly recommended** | Links to an Xray Test Set (e.g. XRR-1825). Without this, test cases are created in Jira but not visible inside any Test Set in Xray |
-| testPlan | **Strongly recommended** | Links to an Xray Test Plan (e.g. P18-6129). Without this, test cases won't appear in any Test Plan for execution tracking |
+| testSet | **Strongly recommended** | Xray Test Set key (e.g. XRR-1825) — the test case will appear inside this Test Set |
+| testPlan | **Strongly recommended** | Xray Test Plan key (e.g. P18-6129) — links the test case to a Test Plan for execution tracking |
 | step_data | No | Input values or test data |
 | step_result | No | Expected outcome |
-| ticket | No | Added as a Jira label for filtering |
+| ticket | No | Dev ticket reference — added as a Jira label (e.g. P18-6128) |
 | priority | No | Critical / High / Medium / Low — defaults to Medium |
 | label | No | Additional Jira label |
-| preconditions | No | Appears in issue description |
-| description | No | Extra context in issue description |
+| preconditions | No | Appears in test case description |
+| description | No | Extra context in test case description |
 
-> ⚠️ **testSet and testPlan are not mandatory but are strongly recommended.** If omitted, test cases will be created as standalone Jira issues not linked to any Test Set or Test Plan — they will be hard to find and won't appear in your Xray test execution workflows.
+> ⚠️ **testSet and testPlan are strongly recommended.** Without them, test cases are created in the XRR project but not linked to any Test Set or Test Plan — they will be hard to find and won't appear in your Xray execution workflows.
 
 ---
 
@@ -118,13 +126,13 @@ summary, ticket, priority, label, testSet, testPlan, preconditions, description,
 1. Reads the CSV and groups rows into test cases
 2. Authenticates with Xray Cloud (Client ID + Secret → Bearer token)
 3. Shows a preview table — asks for confirmation
-4. For each test case:
-   - Creates a Jira issue (type: **Test**) via Jira REST API
-   - Adds test steps via Xray Cloud GraphQL (`addTestStep` mutation)
-   - Links to Test Set via Xray Cloud GraphQL (`addTestsToTestSet` mutation)
-   - Links to Test Plan via Xray Cloud GraphQL (`addTestsToTestPlan` mutation)
-5. Saves results to `results.json`
-6. Prints a creation log showing each Jira key created
+4. For each test case, makes a **single Xray GraphQL call** (`createTest` mutation) that:
+   - Creates the Test Case in the XRR project as a **Manual** test
+   - Adds all steps (action / data / result) in one go
+5. Links the test case to its **Test Set** (`addTestsToTestSet` mutation)
+6. Links the test case to its **Test Plan** (`addTestsToTestPlan` mutation)
+7. Saves results to `results.json`
+8. Prints a creation log showing each XRR key created
 
 ---
 
@@ -136,9 +144,14 @@ summary, ticket, priority, label, testSet, testPlan, preconditions, description,
 
 **"HTTP 401 on Xray"** — Client ID or Client Secret is wrong. Regenerate from Jira → Apps → Xray → API Keys.
 
-**"Specify a valid issue type"** — The `issueTypeName` in `config.json` doesn't match your project. To find the correct name run: `node -e "const https=require('https'),cfg=require('./config.json'),auth='Basic '+Buffer.from(cfg.email+':'+cfg.apiToken).toString('base64');https.get({hostname:new URL(cfg.jiraUrl).hostname,port:443,path:'/rest/api/2/project/'+cfg.projectKey,headers:{Authorization:auth,Accept:'application/json'}},r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>JSON.parse(d).issueTypes.forEach(t=>console.log(t.name)))})"`
+**"cannot create a test step because test is not of a type with kind steps"** — The test case was created in the wrong Jira project. Make sure `projectKey` in `config.json` is `XRR`, not your dev project (e.g. P18).
 
-**"HTTP 403"** — Your Jira user may not have permission to create issues or link test sets/plans in that project.
+**"Specify a valid issue type"** — The `issueTypeName` in `config.json` doesn't match your project. To find the correct name run:
+```bash
+node -e "const https=require('https'),cfg=require('./config.json'),auth='Basic '+Buffer.from(cfg.email+':'+cfg.apiToken).toString('base64');https.get({hostname:new URL(cfg.jiraUrl).hostname,port:443,path:'/rest/api/2/project/'+cfg.projectKey,headers:{Authorization:auth,Accept:'application/json'}},r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>JSON.parse(d).issueTypes.forEach(t=>console.log(t.name)))})"
+```
+
+**"HTTP 403"** — Your Jira user may not have permission to create issues or link test sets/plans in the XRR project.
 
 **Rate limit errors** — The script adds a 400 ms delay between requests. If you still hit limits, increase the delay in the script.
 
