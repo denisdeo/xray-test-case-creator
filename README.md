@@ -22,7 +22,7 @@ Open `config.json` and fill in all fields:
   "projectKey":       "P18",
   "email":            "your.email@company.com",
   "apiToken":         "your-jira-api-token-here",
-  "issueTypeName":    "Test",
+  "issueTypeName":    "Test Case",
   "xrayClientId":     "your-xray-client-id-here",
   "xrayClientSecret": "your-xray-client-secret-here"
 }
@@ -136,7 +136,7 @@ summary, ticket, priority, label, testSet, testPlan, preconditions, description,
 
 **"HTTP 401 on Xray"** — Client ID or Client Secret is wrong. Regenerate from Jira → Apps → Xray → API Keys.
 
-**"issuetype not found"** — Change `issueTypeName` in `config.json` to match exactly what your Jira project uses (check via Jira project settings → issue types).
+**"Specify a valid issue type"** — The `issueTypeName` in `config.json` doesn't match your project. To find the correct name run: `node -e "const https=require('https'),cfg=require('./config.json'),auth='Basic '+Buffer.from(cfg.email+':'+cfg.apiToken).toString('base64');https.get({hostname:new URL(cfg.jiraUrl).hostname,port:443,path:'/rest/api/2/project/'+cfg.projectKey,headers:{Authorization:auth,Accept:'application/json'}},r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>JSON.parse(d).issueTypes.forEach(t=>console.log(t.name)))})"`
 
 **"HTTP 403"** — Your Jira user may not have permission to create issues or link test sets/plans in that project.
 
