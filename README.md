@@ -7,7 +7,7 @@ Works with **Xray for Jira Cloud**.
 
 ## How it works
 
-The script creates **Manual Test Cases** directly inside your Xray Test Set (e.g. XRR-1825) using the Xray Cloud GraphQL API. Each test case is created in the **X-Ray Repository (XRR)** project with its steps, then automatically linked to the Test Set and Test Plan you specify in the CSV.
+The script creates **Manual Test Cases** directly inside your Xray Test Set (e.g. XRR-NUM) using the Xray Cloud GraphQL API. Each test case is created in the **X-Ray Repository (XRR)** project with its steps, then automatically linked to the Test Set and Test Plan you specify in the CSV.
 
 ---
 
@@ -97,7 +97,7 @@ summary, ticket, priority, label, testSet, testPlan, preconditions, description,
 
 | summary | ticket | priority | label | testSet | testPlan | preconditions | description | step_action | step_data | step_result |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Verify login | P18-100 | Critical | auth | XRR-1825 | P18-101 | User is logged out | | Navigate to /login | | Login page shown |
+| Verify login | P18-100 | Critical | auth | XRR-NUM | P18-101 | User is logged out | | Navigate to /login | | Login page shown |
 | | | | | | | | | Enter credentials | user / pass | User is authenticated |
 | | | | | | | | | Verify redirect | | User lands on dashboard |
 
@@ -107,7 +107,7 @@ summary, ticket, priority, label, testSet, testPlan, preconditions, description,
 |---|---|---|
 | summary | Yes (first row only) | Test case title — signals start of a new test case |
 | step_action | Yes (each step row) | What the tester does |
-| testSet | **Strongly recommended** | Xray Test Set key (e.g. XRR-1825) — the test case will appear inside this Test Set |
+| testSet | **Strongly recommended** | Xray Test Set key (e.g. XRR-NUM) — the test case will appear inside this Test Set |
 | testPlan | **Strongly recommended** | Xray Test Plan key (e.g. P18-6129) — links the test case to a Test Plan for execution tracking |
 | step_data | No | Input values or test data |
 | step_result | No | Expected outcome |
