@@ -99,15 +99,17 @@ summary, ticket, priority, label, testSet, testPlan, preconditions, description,
 |---|---|---|
 | summary | Yes (first row only) | Jira issue summary — signals start of a new test case |
 | step_action | Yes (each step row) | What the tester does |
+| testSet | **Strongly recommended** | Links to an Xray Test Set (e.g. XRR-1825). Without this, test cases are created in Jira but not visible inside any Test Set in Xray |
+| testPlan | **Strongly recommended** | Links to an Xray Test Plan (e.g. P18-6129). Without this, test cases won't appear in any Test Plan for execution tracking |
 | step_data | No | Input values or test data |
 | step_result | No | Expected outcome |
 | ticket | No | Added as a Jira label for filtering |
 | priority | No | Critical / High / Medium / Low — defaults to Medium |
 | label | No | Additional Jira label |
-| testSet | No | Links to an Xray Test Set (e.g. XRR-1825) |
-| testPlan | No | Links to an Xray Test Plan (e.g. P18-6129) |
 | preconditions | No | Appears in issue description |
 | description | No | Extra context in issue description |
+
+> ⚠️ **testSet and testPlan are not mandatory but are strongly recommended.** If omitted, test cases will be created as standalone Jira issues not linked to any Test Set or Test Plan — they will be hard to find and won't appear in your Xray test execution workflows.
 
 ---
 

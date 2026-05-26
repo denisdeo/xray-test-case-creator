@@ -306,6 +306,20 @@ function printPreview(cases) {
   });
   console.log('─'.repeat(120));
   console.log(`  Total: ${cases.length} test case(s)\n`);
+
+  // Warn about missing testSet / testPlan
+  const missingSet  = cases.filter(tc => !tc.testSet).map(tc => tc.summary.substring(0, 50));
+  const missingPlan = cases.filter(tc => !tc.testPlan).map(tc => tc.summary.substring(0, 50));
+  if (missingSet.length) {
+    console.log(`  ⚠️  WARNING: ${missingSet.length} test case(s) have no testSet — they will not appear in any Xray Test Set:`);
+    missingSet.forEach(s => console.log(`       • ${s}`));
+    console.log();
+  }
+  if (missingPlan.length) {
+    console.log(`  ⚠️  WARNING: ${missingPlan.length} test case(s) have no testPlan — they will not appear in any Xray Test Plan:`);
+    missingPlan.forEach(s => console.log(`       • ${s}`));
+    console.log();
+  }
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
