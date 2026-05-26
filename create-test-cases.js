@@ -218,46 +218,48 @@ async function resolveIssueId(key) {
 // ─── Priority map ─────────────────────────────────────────────────────────────
 const PRIORITY_MAP = { critical: 'Highest', high: 'High', medium: 'Medium', low: 'Low' };
 
-// ─── Create Jira issue ────────────────────────────────────────────────────────
-async function createIssue(tc) {
-  const priority   = PRIORITY_MAP[(tc.priority || 'medium').toLowerCase()] || 'Medium';
-  const labels     = [...new Set([tc.label, tc.ticket].filter(Boolean))];
-  const descParts  = [];
+// ─── Create Xray Manual Test with steps in one call (Cloud GraphQL) ───────────
+async function createTestCase(tc) {
+  const priority  = PRIORITY_MAP[(tc.priority || 'medium').toLowerCase()] || 'Medium';
+  const labels    = [...new Set([tc.label, tc.ticket].filter(Boolean))];
+  const descParts = [];
   if (tc.preconditions) descParts.push(`*Preconditions:*\n${tc.preconditions}`);
   if (tc.description)   descParts.push(tc.description);
 
-  const body = {
-    fields: {
-      project:   { key: cfg.projectKey },
-      summary:   tc.summary,
-      issuetype: { name: cfg.issueTypeName || 'Test' },
-      priority:  { name: priority },
-      labels,
-      ...(descParts.length ? { description: descParts.join('\n\n') } : {}),
-    },
-  };
+  const steps = (tc.steps || []).map(s => ({
+    action: s.action || '',
+    data:   s.data   || '',
+    result: s.result || '',
+  }));
 
-  const result = await jiraRequest('POST', '/rest/api/2/issue', body);
-  return { key: result.key, id: result.id };   // id = numeric Jira issue ID
-}
-
-// ─── Add Xray steps (Cloud GraphQL) ──────────────────────────────────────────
-async function addSteps(issueId, steps) {
-  if (!steps || !steps.length) return;
-  for (const step of steps) {
-    await xrayGraphQL(`
-      mutation AddStep($issueId: String!, $step: CreateStepInput!) {
-        addTestStep(issueId: $issueId, step: $step) { id }
+  const data = await xrayGraphQL(`
+    mutation CreateTest($testType: UpdateTestTypeInput, $steps: [CreateStepInput], $jira: JSON!) {
+      createTest(testType: $testType, steps: $steps, jira: $jira) {
+        test {
+          issueId
+          jira(fields: ["key"])
+        }
+        warnings
       }
-    `, {
-      issueId,
-      step: {
-        action: step.action || '',
-        data:   step.data   || '',
-        result: step.result || '',
+    }
+  `, {
+    testType: { name: 'Manual' },
+    steps:    steps.length ? steps : undefined,
+    jira: {
+      fields: {
+        summary:  tc.summary,
+        project:  { key: cfg.projectKey },
+        priority: { name: priority },
+        labels,
+        ...(descParts.length ? { description: descParts.join('\n\n') } : {}),
       },
-    });
-  }
+    },
+  });
+
+  const { test, warnings } = data.createTest;
+  if (warnings && warnings.length) process.stdout.write(`⚠️  ${warnings.join(', ')} `);
+
+  return { key: test.jira.key, id: test.issueId };
 }
 
 // ─── Link to Test Set (Cloud GraphQL) ────────────────────────────────────────
@@ -372,13 +374,8 @@ async function main() {
     process.stdout.write(`  ${num} Creating: "${tc.summary.substring(0, 70)}"... `);
 
     try {
-      const { key, id } = await createIssue(tc);
-      process.stdout.write(`→ ${key} `);
-
-      if (tc.steps && tc.steps.length) {
-        await addSteps(id, tc.steps);
-        process.stdout.write(`(${tc.steps.length} steps) `);
-      }
+      const { key, id } = await createTestCase(tc);
+      process.stdout.write(`→ ${key} (${(tc.steps || []).length} steps) `);
 
       if (tc.testSet)  await linkToTestSet(id, tc.testSet);
       if (tc.testPlan) await linkToTestPlan(id, tc.testPlan);
