@@ -144,7 +144,7 @@ function loadJSON(text) {
 }
 
 // ─── Load test cases (auto-detect CSV or JSON by extension) ──────────────────
-const tcPath = path.join(__dirname, inputFile);
+const tcPath = path.isAbsolute(inputFile) ? inputFile : path.join(__dirname, inputFile);
 if (!fs.existsSync(tcPath)) {
   console.error(`\n❌  File not found: ${tcPath}\n`);
   process.exit(1);
