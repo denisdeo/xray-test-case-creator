@@ -9,7 +9,7 @@
  *   node create-test-cases.js test-cases.json         ← JSON file (e.g. Claude-generated)
  *   node create-test-cases.js test-cases.csv --dry-run
  *   node create-test-cases.js test-cases.csv --ticket P18-6128
- *   node create-test-cases.js test-cases.csv --priority Critical
+ *   node create-test-cases.js test-cases.csv --priority High
  *
  * CSV format  — one row per step, header row required:
  *   summary, ticket, priority, label, testSet, testPlan,
@@ -252,7 +252,7 @@ async function resolveIssueId(key) {
 }
 
 // ─── Priority map ─────────────────────────────────────────────────────────────
-const PRIORITY_MAP = { critical: 'Highest', high: 'High', medium: 'Medium', low: 'Low' };
+const PRIORITY_MAP = { high: 'High', medium: 'Medium', low: 'Low' };
 
 // ─── Create Xray Manual Test with steps in one call (Cloud GraphQL) ───────────
 async function createTestCase(tc) {

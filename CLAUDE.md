@@ -19,5 +19,5 @@ node create-test-cases.js my-file.csv                # custom CSV
 ## Filters
 ```bash
 --ticket P18-6128     # filter by ticket
---priority Critical   # filter by priority
+--priority High       # filter by priority
 ```
