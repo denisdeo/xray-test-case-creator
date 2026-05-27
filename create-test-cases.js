@@ -429,8 +429,9 @@ async function listTestSet(testSetKey) {
     const summary = j.summary || '—';
     const labels = Array.isArray(j.labels) ? j.labels : [];
 
-    // Ticket is a label matching the pattern PROJ-123 (e.g. P18-6139)
-    const ticket = labels.find(l => /^[A-Z]+-\d+$/.test(l)) || '—';
+    // Ticket is a label matching the Jira key pattern: one letter, then letters/digits, hyphen, digits
+    // e.g. P18-6139, XRR-1826, ABC-42 — project keys can contain digits after the first letter
+    const ticket = labels.find(l => /^[A-Z][A-Z0-9]+-\d+$/.test(l)) || '—';
 
     // Description: strip Jira wiki markup (*bold*, \n) for readable plain text
     const rawDesc = (j.description || '').replace(/\*[^*]+\*:?/g, '').replace(/\n+/g, ' ').trim();
