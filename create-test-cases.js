@@ -5,16 +5,21 @@
  * Works with Xray for Jira CLOUD (GraphQL API).
  *
  * Usage:
- *   node create-test-cases.js test-cases.csv
+ *   node create-test-cases.js test-cases.csv          ← CSV spreadsheet
+ *   node create-test-cases.js test-cases.json         ← JSON file (e.g. Claude-generated)
  *   node create-test-cases.js test-cases.csv --dry-run
  *   node create-test-cases.js test-cases.csv --ticket P18-6128
  *   node create-test-cases.js test-cases.csv --priority Critical
  *
- * CSV columns (header row required):
+ * CSV format  — one row per step, header row required:
  *   summary, ticket, priority, label, testSet, testPlan,
  *   preconditions, description, step_action, step_data, step_result
+ *   Leave summary blank on continuation rows (same test case).
  *
- * One row per step. Leave summary blank on continuation rows (same test case).
+ * JSON format — array of test case objects:
+ *   [{ summary, ticket, priority, label, testSet, testPlan,
+ *      preconditions, description,
+ *      steps: [{ action, data, result }] }]
  */
 
 const fs    = require('fs');
@@ -118,14 +123,45 @@ function csvToTestCases(text) {
   return testCases;
 }
 
-// ─── Load test cases ──────────────────────────────────────────────────────────
+// ─── JSON loader & validator ──────────────────────────────────────────────────
+function loadJSON(text) {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    console.error(`\n❌  Invalid JSON: ${e.message}\n`);
+    process.exit(1);
+  }
+  const cases = Array.isArray(parsed) ? parsed : [parsed];
+  cases.forEach((tc, i) => {
+    if (!tc.summary) {
+      console.error(`\n❌  JSON item ${i + 1} is missing a "summary" field.\n`);
+      process.exit(1);
+    }
+    if (!Array.isArray(tc.steps)) tc.steps = [];
+  });
+  return cases;
+}
+
+// ─── Load test cases (auto-detect CSV or JSON by extension) ──────────────────
 const tcPath = path.join(__dirname, inputFile);
 if (!fs.existsSync(tcPath)) {
   console.error(`\n❌  File not found: ${tcPath}\n`);
   process.exit(1);
 }
 
-let testCases = csvToTestCases(fs.readFileSync(tcPath, 'utf8'));
+const ext      = path.extname(inputFile).toLowerCase();
+const fileText = fs.readFileSync(tcPath, 'utf8');
+let   testCases;
+
+if (ext === '.json') {
+  testCases = loadJSON(fileText);
+} else if (ext === '.csv') {
+  testCases = csvToTestCases(fileText);
+} else {
+  console.error(`\n❌  Unsupported file type "${ext}". Use a .csv or .json file.\n`);
+  process.exit(1);
+}
 
 if (ticketArg)   testCases = testCases.filter(t => t.ticket === ticketArg);
 if (priorityArg) testCases = testCases.filter(t => (t.priority || '').toLowerCase() === priorityArg.toLowerCase());
@@ -328,6 +364,7 @@ function printPreview(cases) {
 async function main() {
   console.log('\n🧪  Xray Test Case Creator — Xray-Tool');
   console.log(`    Input  : ${inputFile}`);
+  console.log(`    Format : ${ext === '.json' ? 'JSON' : 'CSV'}`);
   console.log(`    Project: ${cfg.projectKey}  |  Jira: ${cfg.jiraUrl}`);
   if (ticketArg)   console.log(`    Filter : ticket = ${ticketArg}`);
   if (priorityArg) console.log(`    Filter : priority = ${priorityArg}`);
