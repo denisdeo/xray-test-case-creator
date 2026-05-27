@@ -75,7 +75,24 @@ node create-test-cases.js test-cases.json            # create
 node create-test-cases.js test-cases.csv --priority High
 node create-test-cases.js test-cases.csv --ticket P18-6128
 node create-test-cases.js test-cases.json --ticket P18-6128 --priority High
+
+# ── List tests inside a Test Set ──────────────────────────
+node create-test-cases.js --list-testset XRR-NUM
 ```
+
+### `--list-testset`
+
+Lists all test cases inside an existing Xray Test Set. No input file required.
+
+```bash
+node create-test-cases.js --list-testset XRR-NUM
+```
+
+For each test case it shows:
+- **Key** — the XRR issue key (e.g. XRR-1234)
+- **Ticket** — the story or ticket the test belongs to (e.g. P18-6139)
+- **Summary** — the test case title
+- **Description** — a short preview of the test case description
 
 ---
 

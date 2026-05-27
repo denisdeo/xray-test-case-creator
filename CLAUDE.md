@@ -18,9 +18,15 @@ node create-test-cases.js my-file.csv                # custom CSV
 
 ## Filters
 ```bash
---ticket P18-6128     # filter by ticket
---priority High       # filter by priority
+--ticket P18-6128        # filter by ticket
+--priority High          # filter by priority
 ```
+
+## List tests in a Test Set
+```bash
+node create-test-cases.js --list-testset XRR-NUM
+```
+No input file required. Shows each test case's key, ticket, summary and description.
 
 ## Rules for writing test cases
 

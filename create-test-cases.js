@@ -10,6 +10,7 @@
  *   node create-test-cases.js test-cases.csv --dry-run
  *   node create-test-cases.js test-cases.csv --ticket P18-6128
  *   node create-test-cases.js test-cases.csv --priority High
+ *   node create-test-cases.js --list-testset XRR-NUM  ← list all tests in a Test Set
  *
  * CSV format  — one row per step, header row required:
  *   summary, ticket, priority, label, testSet, testPlan,
@@ -41,11 +42,12 @@ if (!cfg.xrayClientId || !cfg.xrayClientSecret) {
 }
 
 // ─── Parse CLI args ───────────────────────────────────────────────────────────
-const args        = process.argv.slice(2);
-const dryRun      = args.includes('--dry-run');
-const ticketArg   = argValue(args, '--ticket');
-const priorityArg = argValue(args, '--priority');
-const inputFile   = args.find(a => !a.startsWith('--')) || 'test-cases.csv';
+const args           = process.argv.slice(2);
+const dryRun         = args.includes('--dry-run');
+const ticketArg      = argValue(args, '--ticket');
+const priorityArg    = argValue(args, '--priority');
+const listTestSetArg = argValue(args, '--list-testset');
+const inputFile      = args.find(a => !a.startsWith('--')) || 'test-cases.csv';
 
 function argValue(arr, flag) {
   const i = arr.indexOf(flag);
@@ -144,27 +146,32 @@ function loadJSON(text) {
 }
 
 // ─── Load test cases (auto-detect CSV or JSON by extension) ──────────────────
-const tcPath = path.isAbsolute(inputFile) ? inputFile : path.join(__dirname, inputFile);
-if (!fs.existsSync(tcPath)) {
-  console.error(`\n❌  File not found: ${tcPath}\n`);
-  process.exit(1);
+// Skipped when running in --list-testset mode (no input file needed).
+let testCases = [];
+let ext       = '';
+
+if (!listTestSetArg) {
+  const tcPath = path.isAbsolute(inputFile) ? inputFile : path.join(__dirname, inputFile);
+  if (!fs.existsSync(tcPath)) {
+    console.error(`\n❌  File not found: ${tcPath}\n`);
+    process.exit(1);
+  }
+
+  ext = path.extname(inputFile).toLowerCase();
+  const fileText = fs.readFileSync(tcPath, 'utf8');
+
+  if (ext === '.json') {
+    testCases = loadJSON(fileText);
+  } else if (ext === '.csv') {
+    testCases = csvToTestCases(fileText);
+  } else {
+    console.error(`\n❌  Unsupported file type "${ext}". Use a .csv or .json file.\n`);
+    process.exit(1);
+  }
+
+  if (ticketArg)   testCases = testCases.filter(t => t.ticket === ticketArg);
+  if (priorityArg) testCases = testCases.filter(t => (t.priority || '').toLowerCase() === priorityArg.toLowerCase());
 }
-
-const ext      = path.extname(inputFile).toLowerCase();
-const fileText = fs.readFileSync(tcPath, 'utf8');
-let   testCases;
-
-if (ext === '.json') {
-  testCases = loadJSON(fileText);
-} else if (ext === '.csv') {
-  testCases = csvToTestCases(fileText);
-} else {
-  console.error(`\n❌  Unsupported file type "${ext}". Use a .csv or .json file.\n`);
-  process.exit(1);
-}
-
-if (ticketArg)   testCases = testCases.filter(t => t.ticket === ticketArg);
-if (priorityArg) testCases = testCases.filter(t => (t.priority || '').toLowerCase() === priorityArg.toLowerCase());
 
 // ─── HTTP helper ──────────────────────────────────────────────────────────────
 function httpRequest(hostname, path, method, headers, body) {
@@ -360,8 +367,92 @@ function printPreview(cases) {
   }
 }
 
+// ─── List all tests inside a Test Set ────────────────────────────────────────
+async function listTestSet(testSetKey) {
+  console.log('\n🧪  Xray Test Case Creator — Xray-Tool');
+  console.log(`    Project: ${cfg.projectKey}  |  Jira: ${cfg.jiraUrl}`);
+  console.log(`\n🔍  Listing all tests in Test Set: ${testSetKey}\n`);
+
+  process.stdout.write('  Authenticating with Xray Cloud... ');
+  await getXrayToken();
+  console.log('✅');
+
+  process.stdout.write(`  Resolving ${testSetKey}... `);
+  const testSetId = await resolveIssueId(testSetKey);
+  console.log('✅');
+
+  // Paginate through all tests in the test set
+  const limit = 100;
+  let   start = 0;
+  let   total = null;
+  const tests = [];
+
+  process.stdout.write('  Fetching tests');
+  while (total === null || tests.length < total) {
+    const data = await xrayGraphQL(`
+      query GetTests($issueId: String!, $limit: Int!, $start: Int) {
+        getTestSet(issueId: $issueId) {
+          tests(limit: $limit, start: $start) {
+            total
+            results {
+              issueId
+              jira(fields: ["key", "summary", "description", "labels"])
+            }
+          }
+        }
+      }
+    `, { issueId: testSetId, limit, start });
+
+    const page = data.getTestSet && data.getTestSet.tests;
+    if (!page) break;
+    if (total === null) total = page.total;
+    tests.push(...page.results);
+    start += page.results.length;
+    process.stdout.write('.');
+    if (!page.results.length) break;
+  }
+  console.log(` ✅  (${total} test(s) found)\n`);
+
+  if (!tests.length) {
+    console.log(`  ℹ️  No tests found in ${testSetKey}.\n`);
+    return;
+  }
+
+  const LINE = '─'.repeat(110);
+  console.log(LINE);
+  console.log(`  ${tests.length} test case(s) in ${testSetKey}`);
+  console.log(LINE);
+
+  tests.forEach((t, i) => {
+    const j      = t.jira || {};
+    const key    = j.key     || '—';
+    const summary = j.summary || '—';
+    const labels = Array.isArray(j.labels) ? j.labels : [];
+
+    // Ticket is a label matching the pattern PROJ-123 (e.g. P18-6139)
+    const ticket = labels.find(l => /^[A-Z]+-\d+$/.test(l)) || '—';
+
+    // Description: strip Jira wiki markup (*bold*, \n) for readable plain text
+    const rawDesc = (j.description || '').replace(/\*[^*]+\*:?/g, '').replace(/\n+/g, ' ').trim();
+    const desc    = rawDesc.length > 130 ? rawDesc.substring(0, 130) + '…' : rawDesc;
+
+    console.log();
+    console.log(`  ${String(i + 1).padStart(3)}.  ${key.padEnd(14)} Ticket: ${ticket}`);
+    console.log(`        Summary : ${summary}`);
+    if (desc) console.log(`        Desc.   : ${desc}`);
+  });
+
+  console.log('\n' + LINE + '\n');
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
+  // ── List mode — no input file needed ──────────────────────────────────────
+  if (listTestSetArg) {
+    await listTestSet(listTestSetArg);
+    return;
+  }
+
   console.log('\n🧪  Xray Test Case Creator — Xray-Tool');
   console.log(`    Input  : ${inputFile}`);
   console.log(`    Format : ${ext === '.json' ? 'JSON' : 'CSV'}`);
