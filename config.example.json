@@ -4,10 +4,10 @@
   "projectKey":       "XRR",
   "email":            "your.email@company.com",
   "apiToken":         "your-jira-api-token-here",
-  "issueTypeName":    "Test",
+  "issueTypeName":    "Test Case",
   "xrayClientId":     "your-xray-client-id-here",
   "xrayClientSecret": "your-xray-client-secret-here",
   "_xrayNote":        "Get Client ID + Secret from: Jira → Apps → Xray → Settings → API Keys → Generate",
-  "_issueTypeNote":   "Must match exactly — check your Jira project settings (usually 'Test' for Xray)",
+  "_issueTypeNote":   "Must match exactly — check your Jira project settings (usually 'Test Case' for Xray Cloud)",
   "_tokenNote":       "Get your Jira API token from: https://id.atlassian.com/manage-profile/security/api-tokens"
 }
