@@ -34,6 +34,7 @@ No input file required. Shows each test case's key, ticket, summary and descript
 Test cases must be clear and easy to follow by anyone on the team — not just developers.
 
 - **Plain English only.** No jargon, no internal code references, no raw SQL or API paths in the main step description. If a query or endpoint is needed, put it in the `data` field, not the `action`.
+- **Database table names are required when the test involves checking data in the database.** If a step verifies that a record was saved, updated or deleted, include the exact table name so the tester knows where to look. Put the table name in the `result` or `data` field — e.g. "Check the record in table et_FoodsConnectedOfferIDs" is acceptable and necessary.
 - **Action steps are instructions, not commands.** Write them as "Go to...", "Enter...", "Click...", "Check that..." — as if you are telling a colleague what to do.
 - **Expected results describe what the user or system should see.** Not what the code does internally. Focus on observable outcomes: "The page shows a success message", "The record appears in the list", "An error message is displayed".
 - **Summaries are short and descriptive.** One sentence that tells you what the test is checking. Avoid repeating the ticket number or technical identifiers in the title.
