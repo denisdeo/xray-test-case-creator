@@ -10,3 +10,4 @@ node_modules/
 *.doc
 *.docx
 *-test-cases.json
+CLAUDE.md
